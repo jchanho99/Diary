@@ -6,7 +6,7 @@ name: CI
 on:
   # Triggers the workflow on push or pull request events but only for the "main" branch
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
   pull_request:
     branches: [ "main" ]
 
@@ -41,5 +41,5 @@ jobs:
         run: |
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d '{"content":"Build succeeded on '${{ github.repository }}' (branch: '${{ github.ref_name }}')!"}' \
+               -d '{"content":"CI 성공! (repo: '${{ github.repository }}') (branch: '${{ github.ref_name }}')!"}' \
                ${{ secrets.DISCORD_WEBHOOK_URL }}
