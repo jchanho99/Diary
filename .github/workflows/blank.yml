@@ -41,5 +41,5 @@ jobs:
         run: |
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d '{"content":"CI 성공! (repo: '${{ github.repository }}') (branch: '${{ github.ref_name }}')!"}' \
+               -d '{"content":" '${{ github.event_name == 'push' && 'Push' || github.event_name == 'pull_request' && 'Pull Request' || '기타' }} 이벤트로 CI 성공! (repo: '${{ github.repository }}', branch: '${{ github.ref_name }}')"}' \
                ${{ secrets.DISCORD_WEBHOOK_URL }}
