@@ -39,9 +39,7 @@ jobs:
       - name: Send Discord Success Notification
         if: success()
         run: |
-          bash -c 'curl -H "Content-Type: application/json" \
-            -X POST \
-            -d @- "${{ secrets.DISCORD_WEBHOOK_URL }}" <<EOF
+          cat <<EOF | curl -H "Content-Type: application/json" -X POST -d @- ${{ secrets.DISCORD_WEBHOOK_URL }}
 {
   "embeds": [
     {
@@ -59,15 +57,13 @@ jobs:
     }
   ]
 }
-EOF'
+EOF
 
       # ❌ 실패 알림
       - name: Send Discord Failure Notification
         if: failure()
         run: |
-          bash -c 'curl -H "Content-Type: application/json" \
-            -X POST \
-            -d @- "${{ secrets.DISCORD_WEBHOOK_URL }}" <<EOF
+          cat <<EOF | curl -H "Content-Type: application/json" -X POST -d @- ${{ secrets.DISCORD_WEBHOOK_URL }}
 {
   "embeds": [
     {
@@ -85,5 +81,5 @@ EOF'
     }
   ]
 }
-EOF'
+EOF
 
