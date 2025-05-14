@@ -22,7 +22,7 @@ jobs:
           echo Add other actions to build,
           echo test, and deploy your project.
 
-      # CI 메타데이터 설정
+      # 메타데이터 설정
       - name: Set CI metadata
         run: |
           if [[ "${{ github.event_name }}" == "push" ]]; then
@@ -39,9 +39,9 @@ jobs:
       - name: Send Discord Success Notification
         if: success()
         run: |
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d @- ${{ secrets.DISCORD_WEBHOOK_URL }} <<EOF
+          bash -c 'curl -H "Content-Type: application/json" \
+            -X POST \
+            -d @- "${{ secrets.DISCORD_WEBHOOK_URL }}" <<EOF
 {
   "embeds": [
     {
@@ -59,15 +59,15 @@ jobs:
     }
   ]
 }
-EOF
+EOF'
 
       # ❌ 실패 알림
       - name: Send Discord Failure Notification
         if: failure()
         run: |
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d @- ${{ secrets.DISCORD_WEBHOOK_URL }} <<EOF
+          bash -c 'curl -H "Content-Type: application/json" \
+            -X POST \
+            -d @- "${{ secrets.DISCORD_WEBHOOK_URL }}" <<EOF
 {
   "embeds": [
     {
@@ -85,5 +85,5 @@ EOF
     }
   ]
 }
-EOF
+EOF'
 
