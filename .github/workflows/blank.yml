@@ -36,8 +36,8 @@ jobs:
           echo test, and deploy your project.
       
       # set event type
-      - name: Set event type
-        id: set_event
+      - name: Set Event Type
+        id: event_type
         run: |
           if [[ "${{ github.event_name }}" == "push" ]]; then
             echo "EVENT_TYPE=Push" >> $GITHUB_ENV
@@ -46,13 +46,54 @@ jobs:
           else
             echo "EVENT_TYPE=기타" >> $GITHUB_ENV
           fi
-
-      # Send a Discord notification if the build is successful
-      - name: Send Discord Notification
-        if: success()   # build job이 성공했을 때만 실행
+          echo "TIMESTAMP=$(date --utc +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+      
+      - name: Send Discord Success Notification
+        if: success()
         run: |
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d "{\"content\": \"${EVENT_TYPE} 이벤트로 CI 성공! (repo: ${{ github.repository }}, branch: ${{ github.ref_name }})\"}" \
+               -d '{
+                 "embeds": [
+                   {
+                     "title": "[Diary:${{ github.ref_name }}] ✅ CI 성공",
+                     "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+                     "color": 3066993,
+                     "author": {
+                       "name": "${{ github.actor }}"
+                     },
+                     "description": "[`${{ github.sha::7 }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 성공!",
+                     "footer": {
+                       "text": "GitHub Actions by ${{ github.actor }}"
+                     },
+                     "timestamp": "${TIMESTAMP}"
+                   }
+                 ]
+               }' \
                ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Send Discord Failure Notification
+        if: failure()
+        run: |
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d '{
+                 "embeds": [
+                   {
+                     "title": "[Diary:${{ github.ref_name }}] ❌ CI 실패",
+                     "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+                     "color": 15158332,
+                     "author": {
+                       "name": "${{ github.actor }}"
+                   },
+                     "description": "[`${{ github.sha::7 }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 실패 발생!",
+                     "footer": {
+                       "text": "GitHub Actions by ${{ github.actor }}"
+                     },
+                     "timestamp": "${TIMESTAMP}"
+                  }
+                 ]
+               }' \
+               ${{ secrets.DISCORD_WEBHOOK_URL }}
+
 
