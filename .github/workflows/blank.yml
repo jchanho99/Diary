@@ -22,7 +22,7 @@ jobs:
           echo Add other actions to build,
           echo test, and deploy your project.
 
-      # 이벤트 타입 및 타임스탬프, SHA 설정
+      # CI 메타데이터 설정
       - name: Set CI metadata
         run: |
           if [[ "${{ github.event_name }}" == "push" ]]; then
@@ -41,24 +41,25 @@ jobs:
         run: |
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d '{
-                 "embeds": [
-                   {
-                     "title": "[Diary:${{ github.ref_name }}] ✅ CI 성공",
-                     "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
-                     "color": 3066993,
-                     "author": {
-                       "name": "${{ github.actor }}"
-                     },
-                     "description": "[`${{ env.SHORT_SHA }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 성공!",
-                     "footer": {
-                       "text": "GitHub Actions by ${{ github.actor }}"
-                     },
-                     "timestamp": "${TIMESTAMP}"
-                   }
-                 ]
-               }' \
-               ${{ secrets.DISCORD_WEBHOOK_URL }}
+               -d @- ${{ secrets.DISCORD_WEBHOOK_URL }} <<EOF
+{
+  "embeds": [
+    {
+      "title": "[Diary:${{ github.ref_name }}] ✅ CI 성공",
+      "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+      "color": 3066993,
+      "author": {
+        "name": "${{ github.actor }}"
+      },
+      "description": "[\`${SHORT_SHA}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 성공!",
+      "footer": {
+        "text": "GitHub Actions by ${{ github.actor }}"
+      },
+      "timestamp": "${TIMESTAMP}"
+    }
+  ]
+}
+EOF
 
       # ❌ 실패 알림
       - name: Send Discord Failure Notification
@@ -66,22 +67,23 @@ jobs:
         run: |
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d '{
-                 "embeds": [
-                   {
-                     "title": "[Diary:${{ github.ref_name }}] ❌ CI 실패",
-                     "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
-                     "color": 15158332,
-                     "author": {
-                       "name": "${{ github.actor }}"
-                     },
-                     "description": "[`${{ env.SHORT_SHA }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 실패 발생!",
-                     "footer": {
-                       "text": "GitHub Actions by ${{ github.actor }}"
-                     },
-                     "timestamp": "${TIMESTAMP}"
-                   }
-                 ]
-               }' \
-               ${{ secrets.DISCORD_WEBHOOK_URL }}
+               -d @- ${{ secrets.DISCORD_WEBHOOK_URL }} <<EOF
+{
+  "embeds": [
+    {
+      "title": "[Diary:${{ github.ref_name }}] ❌ CI 실패",
+      "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+      "color": 15158332,
+      "author": {
+        "name": "${{ github.actor }}"
+      },
+      "description": "[\`${SHORT_SHA}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 실패 발생!",
+      "footer": {
+        "text": "GitHub Actions by ${{ github.actor }}"
+      },
+      "timestamp": "${TIMESTAMP}"
+    }
+  ]
+}
+EOF
 
