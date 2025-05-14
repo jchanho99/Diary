@@ -35,11 +35,24 @@ jobs:
           echo Add other actions to build,
           echo test, and deploy your project.
       
+      # set event type
+      - name: Set event type
+        id: set_event
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "EVENT_TYPE=Push" >> $GITHUB_ENV
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "EVENT_TYPE=Pull Request" >> $GITHUB_ENV
+          else
+            echo "EVENT_TYPE=기타" >> $GITHUB_ENV
+          fi
+
       # Send a Discord notification if the build is successful
       - name: Send Discord Notification
         if: success()   # build job이 성공했을 때만 실행
         run: |
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d '{"content":" '${{ github.event_name == 'push' && 'Push' || github.event_name == 'pull_request' && 'Pull Request' || '기타' }} 이벤트로 CI 성공! (repo: '${{ github.repository }}', branch: '${{ github.ref_name }}')"}' \
+               -d "{\"content\": \"${EVENT_TYPE} 이벤트로 CI 성공! (repo: ${{ github.repository }}, branch: ${{ github.ref_name }})\"}" \
                ${{ secrets.DISCORD_WEBHOOK_URL }}
+
