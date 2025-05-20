@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run a one-line script
+        run: echo Hello, world!
+
+      - name: Run a multi-line script
+        run: |
+          echo Add other actions to build,
+          echo test, and deploy your project.
+
+      # 메타데이터 설정
+      - name: Set CI metadata
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "EVENT_TYPE=Push" >> $GITHUB_ENV
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "EVENT_TYPE=Pull Request" >> $GITHUB_ENV
+          else
+            echo "EVENT_TYPE=기타" >> $GITHUB_ENV
+          fi
+          echo "TIMESTAMP=$(date --utc +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      # ✅ 성공 알림
+      - name: Send Discord Success Notification
+        if: success()
+        run: |
+          cat <<EOF | curl -H "Content-Type: application/json" -X POST -d @- ${{ secrets.DISCORD_WEBHOOK_URL }}
+{
+  "embeds": [
+    {
+      "title": "[Diary:${{ github.ref_name }}] ✅ CI 성공",
+      "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+      "color": 3066993,
+      "author": {
+        "name": "${{ github.actor }}"
+      },
+      "description": "[\`${SHORT_SHA}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 성공!",
+      "footer": {
+        "text": "GitHub Actions by ${{ github.actor }}"
+      },
+      "timestamp": "${TIMESTAMP}"
+    }
+  ]
+}
+EOF
+
+      # ❌ 실패 알림
+      - name: Send Discord Failure Notification
+        if: failure()
+        run: |
+          cat <<EOF | curl -H "Content-Type: application/json" -X POST -d @- ${{ secrets.DISCORD_WEBHOOK_URL }}
+{
+  "embeds": [
+    {
+      "title": "[Diary:${{ github.ref_name }}] ❌ CI 실패",
+      "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+      "color": 15158332,
+      "author": {
+        "name": "${{ github.actor }}"
+      },
+      "description": "[\`${SHORT_SHA}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 실패 발생!",
+      "footer": {
+        "text": "GitHub Actions by ${{ github.actor }}"
+      },
+      "timestamp": "${TIMESTAMP}"
+    }
+  ]
+}
+EOF
+
