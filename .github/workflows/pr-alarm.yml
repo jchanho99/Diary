@@ -12,13 +12,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Dump GitHub Event Context
+        run: |
+          echo "github.event:"
+          echo "${{ toJSON(github.event) }}"
+          echo "github.event.pull_request exists: ${{ github.event.pull_request != null }}"
+          # Optionally, if you suspect it's not a PR event, dump event name
+          echo "github.event_name: ${{ github.event_name }}"
+        # Add a condition to run this step only if the pull_request object is NOT found
+        # to focus on the problem runs
+        if: github.event.pull_request == null
+      
       - name: Send Discord Notification for PR Events
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            if (!github.event.pull_request) {
-              console.log("Not a pull_request event, or pull_request object is missing. Exiting.");
+            if (!github.event || !github.event.pull_request) {
+              console.log("github.event or github.event.pull_request is missing. Exiting.");
+              // Optionally log the full event object to debug what's coming in
+              // console.log(JSON.stringify(github.event, null, 2));
               return; // Exit the script gracefully
             }
             const pr = github.event.pull_request;
