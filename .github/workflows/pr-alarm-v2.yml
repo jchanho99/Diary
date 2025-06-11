@@ -1,0 +1,150 @@
+name: PR Notification Workflow # 워크플로 이름
+
+on:
+  pull_request:
+    # PR이 열리거나, 다시 열리거나, 업데이트되거나, 닫혔을 때 워크플로 실행
+    types: [opened, reopened, synchronize, closed]
+
+jobs:
+  notify-pr-events: # PR 이벤트 알림을 담당하는 Job
+    runs-on: ubuntu-latest # 실행 환경 지정
+
+    steps:
+      - name: Checkout repository # 리포지토리 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Send Discord Notification for PR Events # Discord 알림 전송 스텝
+        uses: actions/github-script@v6 # GitHub API 호출 및 스크립트 실행을 위한 액션
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }} # GitHub에서 기본 제공하는 토큰
+          script: |
+            // --------------------------------------------------------
+            // 오류 방지를 위한 Guard Clause:
+            // github.event나 github.event.pull_request가 없을 경우 스크립트 종료
+            if (!github.event || !github.event.pull_request) {
+              console.log("github.event or github.event.pull_request is missing. Exiting.");
+              return;
+            }
+            // --------------------------------------------------------
+
+            const pr = github.event.pull_request;
+            const action = github.event.action; // 현재 PR 이벤트의 액션 (opened, closed 등)
+            
+            let messageTitle = "";    // 알림 제목
+            let messageContent = "";  // 알림 본문 내용
+            let discordColor = "";    // Discord 임베드 색상 (십진수 RGB 값)
+            let commitMessages = "";  // 커밋 메시지 목록
+
+            // PR 이벤트 액션에 따른 알림 내용 및 색상 설정
+            if (action === 'opened' || action === 'reopened' || action === 'synchronize') {
+                messageTitle = `🎉 New Pull Request Opened!`;
+                discordColor = 65280; // 초록색
+
+                const owner = github.repository.owner.login;
+                const repo = github.event.repository.name;
+                const prNumber = pr.number;
+
+                // GitHub API를 통해 PR에 연결된 커밋 목록 가져오기
+                const { data: commits } = await github.rest.pulls.listCommits({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  per_page: 5 // 최대 5개 커밋만 표시
+                });
+
+                if (commits.length > 0) {
+                  commitMessages = "--- Commits ---\n";
+                  commits.forEach(commit => {
+                    // 커밋 메시지의 첫 줄만 가져와서 표시
+                    commitMessages += `- ${commit.commit.message.split('\n')[0].trim()}\n`;
+                  });
+                  // 만약 5개 이상의 커밋이 있다면 추가 커밋 개수 표시
+                  if (pr.commits > commits.length) {
+                    commitMessages += `... and ${pr.commits - commits.length} more commits.\n`;
+                  }
+                } else {
+                  commitMessages = "No commits found in this PR.\n";
+                }
+
+                messageContent = `
+                ---
+                **Repository:** ${github.repository.full_name}
+                **PR Title:** **${pr.title}**
+                **Author:** @${pr.user.login}
+                **Link:** ${pr.html_url}
+                
+                ${commitMessages}
+                `;
+
+            } else if (action === 'closed') {
+                // PR이 닫혔을 때의 알림 로직 (병합 여부에 따라 다름)
+                if (pr.merged) {
+                    messageTitle = `✅ Pull Request Merged!`;
+                    discordColor = 3066993; // 병합 시 녹색 (약간 다른 녹색)
+                    messageContent = `
+                    ---
+                    **Repository:** ${github.repository.full_name}
+                    **PR Title:** **${pr.title}**
+                    **Merged by:** @${pr.merged_by ? pr.merged_by.login : 'Unknown'}
+                    **Link:** ${pr.html_url}
+                    `;
+                } else {
+                    messageTitle = `❌ Pull Request Closed (Rejected)!`;
+                    discordColor = 15548997; // 병합되지 않고 닫힘 시 빨간색
+                    messageContent = `
+                    ---
+                    **Repository:** ${github.repository.full_name}
+                    **PR Title:** **${pr.title}**
+                    **Closed by:** @${pr.user.login}
+                    **Link:** ${pr.html_url}
+                    `;
+                }
+            } else {
+                // 정의되지 않은 다른 PR 이벤트는 무시
+                console.log(`Unhandled PR event action: ${action}. Exiting.`);
+                return;
+            }
+
+            // Discord 웹훅 URL 환경 변수 확인
+            const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
+            if (!discordWebhookUrl) {
+                console.log("DISCORD_WEBHOOK_URL secret is not set. Skipping Discord notification.");
+                return;
+            }
+            
+            // Discord 웹훅으로 알림 전송 (fetch API 사용)
+            await fetch(discordWebhookUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    username: 'GitHub Actions Bot', // Discord 봇 이름
+                    avatar_url: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png', // 봇 아바타
+                    embeds: [{
+                        title: messageTitle,       // 알림 임베드 제목
+                        url: pr.html_url,          // 임베드 클릭 시 이동할 URL
+                        description: messageContent, // 임베드 본문 내용
+                        color: discordColor,       // 임베드 색상
+                        fields: [                  // 임베드 필드 (추가 정보)
+                          {
+                            name: "Author",
+                            value: `@${pr.user.login}`,
+                            inline: true
+                          },
+                          {
+                            name: "State",
+                            value: pr.state === 'closed' ? (pr.merged ? 'Merged' : 'Closed') : 'Open',
+                            inline: true
+                          }
+                        ],
+                        footer: {                  // 임베드 푸터
+                          text: `PR #${pr.number} in ${github.repository.name}`
+                        },
+                        timestamp: new Date().toISOString() // 현재 시간 스탬프
+                    }]
+                })
+            });
+        env:
+          # Secret으로 등록된 Discord 웹훅 URL을 환경 변수로 전달
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
