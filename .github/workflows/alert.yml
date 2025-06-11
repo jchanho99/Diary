@@ -30,8 +30,8 @@ jobs:
           REPOSITORY_NAME="${{ github.event.repository.name }}" # 저장소 이름 추가
           REPOSITORY_URL="${{ github.event.repository.html_url }}" # 저장소 URL 추가
 
-          COMMITS=$(git log --no-merges --pretty=format:"`%h` %s" origin/"${PR_BASE_REF}"..HEAD)
-
+          COMMITS=$(git log --no-merges --pretty=format:"`%h` %s" --max-count=7 origin/"${PR_BASE_REF}"..HEAD)
+          
           COMMITS_LIST=""
           if [ -z "$COMMITS" ]; then
             COMMITS_LIST="*커밋 정보 없음*"
