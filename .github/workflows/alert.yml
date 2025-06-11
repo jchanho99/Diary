@@ -51,7 +51,6 @@ jobs:
         with:
           script: |
             const webhookUrl = process.env.DISCORD_WEBHOOK;
-            // GITHUB_ENV에서 자동으로 넘어온 변수들을 직접 사용
             const prNumber = process.env.PR_NUMBER;
             const prTitle = process.env.PR_TITLE;
             const prUrl = process.env.PR_URL;
@@ -76,7 +75,7 @@ jobs:
               avatar_url: "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
               embeds: [
                 {
-                  title: `✨ 새로운 PR: #${prNumber} - ${prTitle}`,
+                  title: `PR 정보: #${prNumber} - ${prTitle}`,
                   url: prUrl,
                   color: 5814783,
                   author: {
@@ -86,7 +85,7 @@ jobs:
                   },
                   fields: [
                     {
-                      name: "PR 구경하러 가기  |  ",
+                      name: "PR 구경하러 가기   |  ",
                       value: `[PR #${prNumber}: ${prTitle}](${prUrl})`,
                       inline: true
                     },
