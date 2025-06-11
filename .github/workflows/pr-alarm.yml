@@ -67,7 +67,6 @@ jobs:
             `;
 
             // Discord 웹훅으로 알림 보내기
-            const fetch = require('node-fetch');
             await fetch(discordWebhookUrl, {
                 method: 'POST',
                 headers: {
