@@ -2,7 +2,7 @@ name: Pull Request Discord Notification
 
 on:
   pull_request:
-    types: [opened, reopened] # PR이 열리거나 다시 열릴 때 실행
+    types: [opened, reopened]
 
 jobs:
   notify-discord:
@@ -12,7 +12,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 1 # 알림에 포함할 커밋 개수 지정
+          fetch-depth: 1
 
       - name: Fetch base branch history
         run: |
@@ -27,27 +27,28 @@ jobs:
           PR_AUTHOR="${{ github.event.pull_request.user.login }}"
           PR_BASE_REF="${{ github.event.pull_request.base.ref }}"
           PR_HEAD_REF="${{ github.event.pull_request.head.ref }}"
-          REPOSITORY_NAME="${{ github.event.repository.name }}" # 저장소 이름 추가
-          REPOSITORY_URL="${{ github.event.repository.html_url }}" # 저장소 URL 추가
+          REPOSITORY_NAME="${{ github.event.repository.name }}"
+          REPOSITORY_URL="${{ github.event.repository.html_url }}"
 
-          COMMITS=$(git log --no-merges --pretty=format:"`%h` %s" --max-count=7 origin/"${PR_BASE_REF}"..HEAD)
-          
+          # --- MODIFIED PART START ---
+          # Removed backticks from the `sed` commands here
+          COMMITS=$(git log --no-merges --pretty=format:"%h %s" --max-count=7 origin/"${PR_BASE_REF}"..HEAD)
+
           COMMITS_LIST=""
           if [ -z "$COMMITS" ]; then
             COMMITS_LIST="*커밋 정보 없음*"
           else
-            # 각 커밋 메시지를 Discord Embed field 형식에 맞게 가공합니다.
-            # 백틱(`)으로 감싸면 코드로 인식되어 보기 좋습니다.
-            COMMITS_LIST=$(echo "$COMMITS" | sed 's/^/\`/' | sed 's/$/\`/')
+            # Ensure each line starts with `* ` for Markdown list formatting in Discord
+            COMMITS_LIST=$(echo "$COMMITS" | sed 's/^/* /')
           fi
+          # --- MODIFIED PART END ---
 
-          # 다음 스텝에서 사용할 수 있도록 환경 변수에 저장
-          # JSON 문자열에 큰따옴표가 들어갈 수 있으므로 이스케이프 처리
+          # Store variables in GITHUB_ENV for the next step
           echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
           echo "PR_TITLE=$(echo "$PR_TITLE" | sed 's/"/\\"/g')" >> $GITHUB_ENV
           echo "PR_URL=$PR_URL" >> $GITHUB_ENV
           echo "PR_AUTHOR=$PR_AUTHOR" >> $GITHUB_ENV
-          echo "COMMITS_LIST=$(echo "$COMMITS_LIST" | sed 's/"/\\"/g')" >> $GITHUB_ENV
+          echo "COMMITS_LIST=$(echo "$COMMITS_LIST" | sed 's/"/\\"/g')" >> $GITHUB_ENV # Escape quotes in the content
           echo "REPOSITORY_NAME=$(echo "$REPOSITORY_NAME" | sed 's/"/\\"/g')" >> $GITHUB_ENV
           echo "REPOSITORY_URL=$REPOSITORY_URL" >> $GITHUB_ENV
 
@@ -70,52 +71,59 @@ jobs:
             const prTitle = process.env.PR_TITLE;
             const prUrl = process.env.PR_URL;
             const prAuthor = process.env.PR_AUTHOR;
-            const commitsList = process.env.COMMITS_LIST;
+            let commitsList = process.env.COMMITS_LIST; // Use 'let' to allow modification
             const repositoryName = process.env.REPOSITORY_NAME;
             const repositoryUrl = process.env.REPOSITORY_URL;
 
-            // Discord Embed 형식 정의
+            // --- MODIFIED PART START ---
+            // Add backticks here in JavaScript if commitsList is not empty
+            if (commitsList && commitsList !== '*커밋 정보 없음*') {
+              // Split by newline, add backticks to each item, then join
+              commitsList = commitsList.split('\n').map(line => `${line}\``).join('\n');
+            }
+            // --- MODIFIED PART END ---
+
             const payload = {
               username: "GitHub PR Notifier",
               avatar_url: "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
               embeds: [
                 {
-                  title: `드디어 PR이다: #${prNumber} - ${prTitle}`, // Embed의 제목
-                  url: prUrl, // 제목 클릭 시 이동할 URL
-                  description: `**${repositoryName}** 저장소에 PR이 생성되었습니다.`, // Embed의 설명 (선택 사항)
-                  color: 5814783, // 녹색 (DECIMAL 값, HEX #5865F2 (Discord Blurple), #34eb5b (Green))
+                  title: `✨ 새로운 PR: #${prNumber} - ${prTitle}`,
+                  url: prUrl,
+                  description: `**${repositoryName}** 저장소에 PR이 생성되었습니다.`,
+                  color: 5814783,
                   author: {
                     name: `작성자: ${prAuthor}`,
-                    url: `https://github.com/${prAuthor}`, // 작성자 프로필 링크
-                    icon_url: `https://github.com/${prAuthor}.png?size=32` // 작성자 아바타
+                    url: `https://github.com/${prAuthor}`,
+                    icon_url: `https://github.com/${prAuthor}.png?size=32`
                   },
-                  fields: [ // 정보 필드
+                  fields: [
                     {
-                      name: "여길 클릭해라",
+                      name: "🔗 PR 링크",
                       value: `[PR #${prNumber}: ${prTitle}](${prUrl})`,
-                      inline: false // 한 줄 전체 사용
+                      inline: false
                     },
                     {
-                      name: "읽어라",
-                      value: commitsList || "*커밋 정보 없음*", // 커밋이 없으면 대체 메시지
+                      name: "📝 포함된 커밋 (최근 7개)",
+                      value: commitsList || "*커밋 정보 없음*",
                       inline: false
+                    },
+                    {
+                      name: "📦 저장소",
+                      value: `[${repositoryName}](${repositoryUrl})`,
+                      inline: true
+                    },
+                    {
+                      name: "👤 작성자",
+                      value: `[${prAuthor}](https://github.com/${prAuthor})`,
+                      inline: true
                     }
-                    # {
-                    #   name: "📦 저장소",
-                    #   value: `[${repositoryName}](${repositoryUrl})`,
-                    #   inline: true
-                    # },
-                    # {
-                    #   name: "👤 작성자",
-                    #   value: `[${prAuthor}](https://github.com/${prAuthor})`,
-                    #   inline: true
-                    # }
                   ],
                   footer: {
                     text: "GitHub Actions",
                     icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
                   },
-                  timestamp: new Date().toISOString() // 현재 시간
+                  timestamp: new Date().toISOString()
                 }
               ]
             };
