@@ -1,0 +1,104 @@
+name: PR Commit Notifier
+
+on:
+  pull_request:
+    types: [opened, reopened, closed] # PR이 열리거나, 다시 열리거나, 업데이트될 때
+
+jobs:
+  notify-pr-commits:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get PR Commits and Send Discord Notification
+        # PR이 열렸을 때만 알림을 보내도록 조건을 추가합니다.
+        # synchronize 이벤트에서도 모든 커밋을 보낼 필요가 없다면 'opened'로 제한하는 것이 좋습니다.
+        if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'reopened')
+        uses: actions/github-script@v6 # GitHub API 호출을 위한 액션
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }} # GitHub Actions에서 제공하는 기본 토큰
+          script: |
+            const pr = github.event.pull_request;
+            const owner = github.repository.owner.login;
+            const repo = github.event.repository.name;
+            const prNumber = pr.number;
+
+            let commitMessages = "";
+            let commitCount = 0;
+
+            // GitHub API를 호출하여 PR에 연결된 커밋 목록을 가져옵니다.
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner,
+              repo,
+              pull_number: prNumber,
+              per_page: 5 // 최대 5개 커밋만 표시하도록 제한 (너무 길어지는 것을 방지)
+            });
+
+            if (commits.length > 0) {
+              commitMessages = "--- Commits ---\n";
+              commits.forEach(commit => {
+                commitMessages += `- ${commit.commit.message.split('\n')[0].trim()}\n`; // 첫 줄만 가져오기
+                commitCount++;
+              });
+              if (pr.commits > commits.length) {
+                commitMessages += `... and ${pr.commits - commits.length} more commits.\n`;
+              }
+            } else {
+              commitMessages = "No commits found in this PR.\n";
+            }
+
+            const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
+            if (!discordWebhookUrl) {
+                console.log("DISCORD_WEBHOOK_URL secret is not set. Skipping Discord notification.");
+                return;
+            }
+
+            const messageContent = `
+            🎉 **New Pull Request opened!** 🎉
+            ---
+            **Repository:** ${github.repository.full_name}
+            **PR Title:** **${pr.title}**
+            **Author:** @${pr.user.login}
+            **Link:** ${pr.html_url}
+            
+            ${commitMessages}
+            `;
+
+            // Discord 웹훅으로 알림 보내기
+            const fetch = require('node-fetch');
+            await fetch(discordWebhookUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    username: 'GitHub Actions Bot',
+                    avatar_url: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+                    embeds: [{
+                        title: pr.title,
+                        url: pr.html_url,
+                        description: messageContent,
+                        color: 65280, // 초록색 (RGB 0, 255, 0)
+                        fields: [
+                          {
+                            name: "Author",
+                            value: `@${pr.user.login}`,
+                            inline: true
+                          },
+                          {
+                            name: "Commits",
+                            value: `${pr.commits}`,
+                            inline: true
+                          }
+                        ],
+                        footer: {
+                          text: `PR #${pr.number} in ${github.repository.name}`
+                        },
+                        timestamp: new Date().toISOString()
+                    }]
+                })
+            });
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }} # Secret으로 등록된 웹훅 URL
