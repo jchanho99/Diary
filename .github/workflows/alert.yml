@@ -1,150 +1,90 @@
-name: PR Notification Workflow # 워크플로 이름
+name: Pull Request Discord Notification
 
 on:
   pull_request:
-    # PR이 열리거나, 다시 열리거나, 업데이트되거나, 닫혔을 때 워크플로 실행
-    types: [opened, reopened, synchronize, closed]
+    types: [opened, reopened] # PR이 열리거나 다시 열릴 때 실행
 
 jobs:
-  notify-pr-events: # PR 이벤트 알림을 담당하는 Job
-    runs-on: ubuntu-latest # 실행 환경 지정
-
+  notify-discord:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository # 리포지토리 코드 체크아웃
-        uses: actions/checkout@v4
+      - name: Get Pull Request details and commits
+        id: pr_details
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+          PR_BASE_REF="${{ github.event.pull_request.base.ref }}" # 대상 브랜치
+          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}" # 소스 브랜치
 
-      - name: Send Discord Notification for PR Events # Discord 알림 전송 스텝
-        uses: actions/github-script@v6 # GitHub API 호출 및 스크립트 실행을 위한 액션
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }} # GitHub에서 기본 제공하는 토큰
-          script: |
-            // --------------------------------------------------------
-            // 오류 방지를 위한 Guard Clause:
-            // github.event나 github.event.pull_request가 없을 경우 스크립트 종료
-            if (!github.event || !github.event.pull_request) {
-              console.log("github.event or github.event.pull_request is missing. Exiting.");
-              return;
-            }
-            // --------------------------------------------------------
+          # GitHub CLI를 사용하여 커밋 목록 가져오기 (GitHub 토큰 필요)
+          # 이 스텝에서는 단순히 PR에 포함된 커밋을 나열합니다.
+          # 실제 워크플로우에서는 `github.token`을 사용하여 인증합니다.
+          # 참고: fetch 명령으로 HEAD 브랜치와 BASE 브랜치 간의 커밋을 비교합니다.
 
-            const pr = github.event.pull_request;
-            const action = github.event.action; // 현재 PR 이벤트의 액션 (opened, closed 등)
-            
-            let messageTitle = "";    // 알림 제목
-            let messageContent = "";  // 알림 본문 내용
-            let discordColor = "";    // Discord 임베드 색상 (십진수 RGB 값)
-            let commitMessages = "";  // 커밋 메시지 목록
+          # 모든 PR 커밋을 가져오기 (merge commit 제외)
+          # PR 생성 시 포함된 커밋들의 정보를 얻기 위해 `github.event.pull_request.commits_url`을 사용할 수 있습니다.
+          # 또는 `git log` 명령어를 사용하여 base와 head 브랜치 간의 커밋을 비교할 수 있습니다.
 
-            // PR 이벤트 액션에 따른 알림 내용 및 색상 설정
-            if (action === 'opened' || action === 'reopened' || action === 'synchronize') {
-                messageTitle = `🎉 New Pull Request Opened!`;
-                discordColor = 65280; // 초록색
+          # 여기서는 좀 더 간단하게 PR 이벤트에 포함된 커밋들을 직접 사용합니다.
+          # GitHub Event의 `pull_request.commits` 필드에는 커밋 수가 있지만,
+          # 실제 커밋 정보는 `pull_request.commits_url`을 통해 API 호출로 가져와야 합니다.
+          # 여기서는 `github.event.pull_request.head.sha`와 `github.event.pull_request.base.sha`를 이용하여 git log를 사용합니다.
 
-                const owner = github.repository.owner.login;
-                const repo = github.event.repository.name;
-                const prNumber = pr.number;
+          # Git 리포지토리 체크아웃 (커밋 정보를 가져오기 위함)
+          git clone ${{ github.event.pull_request.base.repo.clone_url }} .
+          git fetch origin ${{ PR_HEAD_REF }}
+          git checkout ${{ PR_HEAD_REF }}
 
-                // GitHub API를 통해 PR에 연결된 커밋 목록 가져오기
-                const { data: commits } = await github.rest.pulls.listCommits({
-                  owner,
-                  repo,
-                  pull_number: prNumber,
-                  per_page: 5 // 최대 5개 커밋만 표시
-                });
+          COMMITS_LIST=""
+          # Git log 명령어를 사용하여 base 브랜치와 head 브랜치 사이의 커밋을 가져옵니다.
+          # --no-merges: 병합 커밋 제외
+          # --pretty=format:"`%h` %s" : 짧은 해시와 제목만 표시
+          COMMITS=$(git log --no-merges --pretty=format:"`%h` %s" ${{ PR_BASE_REF }}..${{ PR_HEAD_REF }})
 
-                if (commits.length > 0) {
-                  commitMessages = "--- Commits ---\n";
-                  commits.forEach(commit => {
-                    // 커밋 메시지의 첫 줄만 가져와서 표시
-                    commitMessages += `- ${commit.commit.message.split('\n')[0].trim()}\n`;
-                  });
-                  // 만약 5개 이상의 커밋이 있다면 추가 커밋 개수 표시
-                  if (pr.commits > commits.length) {
-                    commitMessages += `... and ${pr.commits - commits.length} more commits.\n`;
-                  }
-                } else {
-                  commitMessages = "No commits found in this PR.\n";
-                }
+          if [ -z "$COMMITS" ]; then
+            COMMITS_LIST="*커밋 정보 없음*"
+          else
+            COMMITS_LIST=$(echo "$COMMITS" | sed 's/^/* /') # 각 줄 앞에 `* ` 추가
+          fi
 
-                messageContent = `
-                ---
-                **Repository:** ${github.repository.full_name}
-                **PR Title:** **${pr.title}**
-                **Author:** @${pr.user.login}
-                **Link:** ${pr.html_url}
-                
-                ${commitMessages}
-                `;
+          # Discord 메시지 본문 구성
+          DISCORD_MESSAGE="**새로운 PR이 생성되었습니다!** :rocket:\n\n"
+          DISCORD_MESSAGE+="**제목:** ${PR_TITLE}\n"
+          DISCORD_MESSAGE+="**PR 번호:** #${PR_NUMBER}\n"
+          DISCORD_MESSAGE+="**작성자:** ${PR_AUTHOR}\n"
+          DISCORD_MESSAGE+="**링크:** ${PR_URL}\n\n"
+          DISCORD_MESSAGE+="**포함된 커밋:**\n${COMMITS_LIST}"
 
-            } else if (action === 'closed') {
-                // PR이 닫혔을 때의 알림 로직 (병합 여부에 따라 다름)
-                if (pr.merged) {
-                    messageTitle = `✅ Pull Request Merged!`;
-                    discordColor = 3066993; // 병합 시 녹색 (약간 다른 녹색)
-                    messageContent = `
-                    ---
-                    **Repository:** ${github.repository.full_name}
-                    **PR Title:** **${pr.title}**
-                    **Merged by:** @${pr.merged_by ? pr.merged_by.login : 'Unknown'}
-                    **Link:** ${pr.html_url}
-                    `;
-                } else {
-                    messageTitle = `❌ Pull Request Closed (Rejected)!`;
-                    discordColor = 15548997; // 병합되지 않고 닫힘 시 빨간색
-                    messageContent = `
-                    ---
-                    **Repository:** ${github.repository.full_name}
-                    **PR Title:** **${pr.title}**
-                    **Closed by:** @${pr.user.login}
-                    **Link:** ${pr.html_url}
-                    `;
-                }
-            } else {
-                // 정의되지 않은 다른 PR 이벤트는 무시
-                console.log(`Unhandled PR event action: ${action}. Exiting.`);
-                return;
-            }
+          # JSON 페이로드 구성 (Discord Webhook 형식)
+          # Discord Embeds를 사용하면 더 깔끔하게 표시할 수 있지만, 여기서는 간단하게 content 필드만 사용합니다.
+          # 참고: Discord Webhook의 content 필드는 2000자 제한이 있습니다.
+          # 커밋이 매우 많을 경우 잘릴 수 있으니 주의하세요.
 
-            // Discord 웹훅 URL 환경 변수 확인
-            const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
-            if (!discordWebhookUrl) {
-                console.log("DISCORD_WEBHOOK_URL secret is not set. Skipping Discord notification.");
-                return;
-            }
-            
-            // Discord 웹훅으로 알림 전송 (fetch API 사용)
-            await fetch(discordWebhookUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    username: 'GitHub Actions Bot', // Discord 봇 이름
-                    avatar_url: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png', // 봇 아바타
-                    embeds: [{
-                        title: messageTitle,       // 알림 임베드 제목
-                        url: pr.html_url,          // 임베드 클릭 시 이동할 URL
-                        description: messageContent, // 임베드 본문 내용
-                        color: discordColor,       // 임베드 색상
-                        fields: [                  // 임베드 필드 (추가 정보)
-                          {
-                            name: "Author",
-                            value: `@${pr.user.login}`,
-                            inline: true
-                          },
-                          {
-                            name: "State",
-                            value: pr.state === 'closed' ? (pr.merged ? 'Merged' : 'Closed') : 'Open',
-                            inline: true
-                          }
-                        ],
-                        footer: {                  // 임베드 푸터
-                          text: `PR #${pr.number} in ${github.repository.name}`
-                        },
-                        timestamp: new Date().toISOString() // 현재 시간 스탬프
-                    }]
-                })
-            });
+          DISCORD_PAYLOAD='{"content": "'"$DISCORD_MESSAGE"'", "username": "GitHub PR Notifier", "avatar_url": "https://avatars.githubusercontent.com/u/9919?s=200&v=4"}'
+
+          echo "DISCORD_PAYLOAD=${DISCORD_PAYLOAD}" >> $GITHUB_ENV
+
+      - name: Send Discord Notification
+        uses: actions/github-script@v7 # curl 명령어를 실행하기 위해 github-script 액션 사용
         env:
-          # Secret으로 등록된 Discord 웹훅 URL을 환경 변수로 전달
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }} # GitHub Secrets에 저장된 Webhook URL
+        with:
+          script: |
+            const payload = process.env.DISCORD_PAYLOAD;
+            const webhookUrl = process.env.DISCORD_WEBHOOK;
+
+            const response = await fetch(webhookUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: payload,
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`Failed to send Discord notification: ${response.status} ${errorText}`);
+            }
+            console.log('Discord notification sent successfully!');
