@@ -81,14 +81,14 @@ jobs:
                   },
                   fields: [
                     {
-                      name: "PR 구경하러 가기",
+                      name: "PR 구경하러 가기   |  ",
                       value: `[PR #${prNumber}: ${prTitle}](${prUrl})`,
                       inline: true
                     },
                     {
                       name: "커밋 내용 (최근 7개)",
                       value: commitsList,
-                      inline: false
+                      inline: true
                     }
                   ],
                   footer: {
