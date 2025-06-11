@@ -2,20 +2,25 @@ name: Pull Request Discord Notification
 
 on:
   pull_request:
-    types: [opened, reopened] # PR이 열리거나 다시 열릴 때 실행
+    types: [opened, reopened]
 
 jobs:
   notify-discord:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository # git log를 위해 레포지토리 체크아웃 추가
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # fetch-depth: 0 은 모든 히스토리를 가져와 git log 비교를 가능하게 함
-          # 하지만 큰 레포지토리에서는 시간이 오래 걸릴 수 있으니 주의.
-          # 특정 브랜치만 fetch하는 것이 더 효율적일 수 있습니다.
-          # 여기서는 기본 checkout만으로 충분히 필요한 커밋 정보 가져올 수 있도록 설정
-          fetch-depth: 0 # 모든 히스토리를 가져옴
+          # PR의 head (소스) 브랜치만 가져옵니다.
+          # base 브랜치의 히스토리는 git fetch로 가져올 것입니다.
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1 # 현재 브랜치의 최신 커밋만 가져옵니다.
+
+      - name: Fetch base branch history
+        run: |
+          # 대상 브랜치 (main, master 등)의 히스토리를 가져옵니다.
+          # base.ref를 사용하여 실제 브랜치 이름을 사용합니다.
+          git fetch origin ${{ github.event.pull_request.base.ref }}
 
       - name: Get Pull Request details and commits
         id: pr_details
@@ -24,24 +29,36 @@ jobs:
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
           PR_AUTHOR="${{ github.event.pull_request.user.login }}"
-          PR_BASE_REF="${{ github.event.pull_request.base.ref }}" # 대상 브랜치
-          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}" # 소스 브랜치
+          PR_BASE_REF="${{ github.event.pull_request.base.ref }}" # 대상 브랜치 (예: main)
+          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}" # 소스 브랜치 (예: feature/xyz)
 
-          # Git log 명령어를 사용하여 base 브랜치와 head 브랜치 사이의 커밋을 가져옵니다.
+          echo "DEBUG: PR_BASE_REF=${PR_BASE_REF}"
+          echo "DEBUG: PR_HEAD_REF=${PR_HEAD_REF}"
+          echo "DEBUG: Current HEAD=$(git rev-parse HEAD)"
+          echo "DEBUG: Origin ${PR_BASE_REF}=$(git rev-parse origin/${PR_BASE_REF})"
+
+          # git log 명령어를 사용하여 base 브랜치와 head 브랜치 사이의 커밋을 가져옵니다.
           # --no-merges: 병합 커밋 제외
           # --pretty=format:"`%h` %s" : 짧은 해시와 제목만 표시
-          # HEAD는 actions/checkout@v4로 체크아웃된 PR_HEAD_REF를 가리키므로,
-          # git log를 현재 HEAD와 PR_BASE_REF 간에 비교합니다.
-          COMMITS=$(git log --no-merges --pretty=format:"`%h` %s" "${PR_BASE_REF}"..HEAD)
+          # ${PR_BASE_REF} 대신 origin/${PR_BASE_REF}를 사용하여 원격 브랜치를 명시적으로 참조합니다.
+          # HEAD는 actions/checkout@v4로 체크아웃된 PR_HEAD_REF를 가리킵니다.
+          COMMITS=$(git log --no-merges --pretty=format:"`%h` %s" origin/"${PR_BASE_REF}"..HEAD)
 
           if [ -z "$COMMITS" ]; then
-            COMMITS_LIST="*커밋 정보 없음*"
+            COMMITS_LIST="*커밋 정보 없음 또는 이미 병합된 커밋*"
+            # `git log`가 실패했거나 커밋이 없는 경우, PR에 직접 연결된 커밋들을 가져오는 대체 로직
+            # API 호출이 필요하며, GitHub 토큰을 사용해야 합니다.
+            # 여기서는 API 호출 대신 단순 메시지로 대체합니다.
+            # 커밋 정보가 없는 경우, PR의 이벤트 페이로드에 있는 커밋 수를 활용할 수도 있습니다.
+            # COMMITS_LIST="*PR에 포함된 커밋 수: ${{ github.event.pull_request.commits }}*"
+
+            # 만약 git log가 실패하는 경우, PR 이벤트의 `pull_request.commits_url`을 사용하여 API를 통해 커밋 정보를 가져오는 것이 더 견고할 수 있습니다.
+            # 이는 다음 스텝에서 `github-script`를 사용하여 GitHub API를 호출해야 합니다.
           else
             # 각 줄 앞에 '* ' 추가
             COMMITS_LIST=$(echo "$COMMITS" | sed 's/^/* /')
           fi
 
-          # Discord 메시지 본문 구성
           DISCORD_MESSAGE="**새로운 PR이 생성되었습니다!** :rocket:\n\n"
           DISCORD_MESSAGE+="**제목:** ${PR_TITLE}\n"
           DISCORD_MESSAGE+="**PR 번호:** #${PR_NUMBER}\n"
@@ -49,16 +66,13 @@ jobs:
           DISCORD_MESSAGE+="**링크:** ${PR_URL}\n\n"
           DISCORD_MESSAGE+="**포함된 커밋:**\n${COMMITS_LIST}"
 
-          # 다음 스텝에서 사용할 수 있도록 환경 변수에 저장
-          # `echo "VAR_NAME=$(value)" >> $GITHUB_ENV` 형식 사용
-          # 메시지 내용에 큰따옴표가 포함될 경우를 대비해 이스케이프 처리
           echo "DISCORD_MESSAGE=$(echo "$DISCORD_MESSAGE" | sed 's/"/\\"/g')" >> $GITHUB_ENV
 
       - name: Send Discord Notification
         uses: actions/github-script@v7
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DISCORD_MESSAGE: ${{ env.DISCORD_MESSAGE }} # 이전 스텝에서 설정된 환경 변수 사용
+          DISCORD_MESSAGE: ${{ env.DISCORD_MESSAGE }}
         with:
           script: |
             const discordMessage = process.env.DISCORD_MESSAGE;
