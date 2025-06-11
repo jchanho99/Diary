@@ -8,20 +8,19 @@ jobs:
   notify-discord:
     runs-on: ubuntu-latest
     steps:
-      # Git Checkout 및 Fetch 스텝은 더 이상 필요 없습니다.
-      # GitHub API를 직접 호출하여 커밋 정보를 가져옵니다.
-
       - name: Get Pull Request details and commits via GitHub API
         id: pr_details_api
         uses: actions/github-script@v7
         with:
           script: |
+            // core 객체를 통해 환경 변수를 설정합니다.
+            // context, github, core, io, exec, hash, etc. 객체들이 github-script에 제공됩니다.
+
             const prNumber = context.issue.number;
             const repoOwner = context.repo.owner;
             const repoName = context.repo.repo;
 
             // GitHub API를 사용하여 PR의 커밋 목록을 가져옵니다.
-            // max 7개 커밋을 가져오도록 `per_page`를 설정합니다.
             const { data: commits } = await github.rest.pulls.listCommits({
               owner: repoOwner,
               repo: repoName,
@@ -39,15 +38,16 @@ jobs:
               }).join('\n');
             }
 
-            // 필요한 정보들을 GITHUB_ENV에 저장합니다.
-            // github.event.pull_request 객체에서 직접 가져옵니다.
-            console.log(`::set-env name=PR_NUMBER::${prNumber}`);
-            console.log(`::set-env name=PR_TITLE::${JSON.stringify(context.payload.pull_request.title)}`);
-            console.log(`::set-env name=PR_URL::${context.payload.pull_request.html_url}`);
-            console.log(`::set-env name=PR_AUTHOR::${context.payload.pull_request.user.login}`);
-            console.log(`::set-env name=COMMITS_FORMATTED_LIST::${JSON.stringify(formattedCommitsList)}`); // 포맷팅된 커밋 목록
-            console.log(`::set-env name=REPOSITORY_NAME::${JSON.stringify(repoName)}`);
-            console.log(`::set-env name=REPOSITORY_URL::${context.payload.repository.html_url}`);
+            // core.exportVariable을 사용하여 환경 변수를 설정합니다.
+            // JSON.stringify는 문자열 자체에 따옴표가 필요한 경우에만 사용 (예: 객체나 배열을 문자열로 저장할 때)
+            // 여기서는 이미 안전하게 문자열로 되어 있으므로 필요하지 않습니다.
+            core.exportVariable('PR_NUMBER', prNumber);
+            core.exportVariable('PR_TITLE', context.payload.pull_request.title);
+            core.exportVariable('PR_URL', context.payload.pull_request.html_url);
+            core.exportVariable('PR_AUTHOR', context.payload.pull_request.user.login);
+            core.exportVariable('COMMITS_FORMATTED_LIST', formattedCommitsList);
+            core.exportVariable('REPOSITORY_NAME', repoName);
+            core.exportVariable('REPOSITORY_URL', context.payload.repository.html_url);
 
 
       - name: Send Discord Notification
@@ -57,12 +57,12 @@ jobs:
         with:
           script: |
             const webhookUrl = process.env.DISCORD_WEBHOOK;
-            // GITHUB_ENV에서 설정된 변수들을 직접 사용
+            // process.env를 통해 GITHUB_ENV에서 설정된 변수들을 직접 사용
             const prNumber = process.env.PR_NUMBER;
             const prTitle = process.env.PR_TITLE;
             const prUrl = process.env.PR_URL;
             const prAuthor = process.env.PR_AUTHOR;
-            const commitsList = process.env.COMMITS_FORMATTED_LIST; // 이미 포맷팅된 리스트 사용
+            const commitsList = process.env.COMMITS_FORMATTED_LIST;
             const repositoryName = process.env.REPOSITORY_NAME;
             const repositoryUrl = process.env.REPOSITORY_URL;
 
@@ -87,8 +87,8 @@ jobs:
                     },
                     {
                       name: "커밋 내용 (최근 7개)",
-                      value: commitsList, // 이미 포맷팅된 리스트
-                      inline: false // 커밋 목록은 여러 줄이므로 inline: false가 더 적합합니다.
+                      value: commitsList,
+                      inline: false
                     }
                   ],
                   footer: {
