@@ -12,7 +12,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 1 # 현재 브랜치의 최신 커밋만 가져옵니다.
+          fetch-depth: 1 # 알림에 포함할 커밋 개수 지정
 
       - name: Fetch base branch history
         run: |
@@ -80,7 +80,7 @@ jobs:
               avatar_url: "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
               embeds: [
                 {
-                  title: `✨ 새로운 PR: #${prNumber} - ${prTitle}`, // Embed의 제목
+                  title: `드디어 PR이다: #${prNumber} - ${prTitle}`, // Embed의 제목
                   url: prUrl, // 제목 클릭 시 이동할 URL
                   description: `**${repositoryName}** 저장소에 PR이 생성되었습니다.`, // Embed의 설명 (선택 사항)
                   color: 5814783, // 녹색 (DECIMAL 값, HEX #5865F2 (Discord Blurple), #34eb5b (Green))
@@ -91,25 +91,25 @@ jobs:
                   },
                   fields: [ // 정보 필드
                     {
-                      name: "🔗 PR 링크",
+                      name: "여길 클릭해라",
                       value: `[PR #${prNumber}: ${prTitle}](${prUrl})`,
                       inline: false // 한 줄 전체 사용
                     },
                     {
-                      name: "📝 포함된 커밋",
+                      name: "읽어라",
                       value: commitsList || "*커밋 정보 없음*", // 커밋이 없으면 대체 메시지
                       inline: false
-                    },
-                    {
-                      name: "📦 저장소",
-                      value: `[${repositoryName}](${repositoryUrl})`,
-                      inline: true
-                    },
-                    {
-                      name: "👤 작성자",
-                      value: `[${prAuthor}](https://github.com/${prAuthor})`,
-                      inline: true
                     }
+                    # {
+                    #   name: "📦 저장소",
+                    #   value: `[${repositoryName}](${repositoryUrl})`,
+                    #   inline: true
+                    # },
+                    # {
+                    #   name: "👤 작성자",
+                    #   value: `[${prAuthor}](https://github.com/${prAuthor})`,
+                    #   inline: true
+                    # }
                   ],
                   footer: {
                     text: "GitHub Actions",
