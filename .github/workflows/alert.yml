@@ -27,8 +27,6 @@ jobs:
           PR_AUTHOR="${{ github.event.pull_request.user.login }}"
           PR_BASE_REF="${{ github.event.pull_request.base.ref }}"
           PR_HEAD_REF="${{ github.event.pull_request.head.ref }}"
-          REPOSITORY_NAME="${{ github.event.repository.name }}"
-          REPOSITORY_URL="${{ github.event.repository.html_url }}"
 
           # --- MODIFIED PART START ---
           # Removed backticks from the `sed` commands here
@@ -49,8 +47,6 @@ jobs:
           echo "PR_URL=$PR_URL" >> $GITHUB_ENV
           echo "PR_AUTHOR=$PR_AUTHOR" >> $GITHUB_ENV
           echo "COMMITS_LIST=$(echo "$COMMITS_LIST" | sed 's/"/\\"/g')" >> $GITHUB_ENV # Escape quotes in the content
-          echo "REPOSITORY_NAME=$(echo "$REPOSITORY_NAME" | sed 's/"/\\"/g')" >> $GITHUB_ENV
-          echo "REPOSITORY_URL=$REPOSITORY_URL" >> $GITHUB_ENV
 
 
       - name: Send Discord Notification
@@ -62,8 +58,6 @@ jobs:
           PR_URL: ${{ env.PR_URL }}
           PR_AUTHOR: ${{ env.PR_AUTHOR }}
           COMMITS_LIST: ${{ env.COMMITS_LIST }}
-          REPOSITORY_NAME: ${{ env.REPOSITORY_NAME }}
-          REPOSITORY_URL: ${{ env.REPOSITORY_URL }}
         with:
           script: |
             const webhookUrl = process.env.DISCORD_WEBHOOK;
@@ -72,8 +66,6 @@ jobs:
             const prUrl = process.env.PR_URL;
             const prAuthor = process.env.PR_AUTHOR;
             let commitsList = process.env.COMMITS_LIST; // Use 'let' to allow modification
-            const repositoryName = process.env.REPOSITORY_NAME;
-            const repositoryUrl = process.env.REPOSITORY_URL;
 
             // --- MODIFIED PART START ---
             // Add backticks here in JavaScript if commitsList is not empty
@@ -90,7 +82,6 @@ jobs:
                 {
                   title: `✨ 새로운 PR: #${prNumber} - ${prTitle}`,
                   url: prUrl,
-                  description: `**${repositoryName}** 저장소에 PR이 생성되었습니다.`,
                   color: 5814783,
                   author: {
                     name: `작성자: ${prAuthor}`,
@@ -99,23 +90,13 @@ jobs:
                   },
                   fields: [
                     {
-                      name: "🔗 PR 링크",
+                      name: "PR 구경하러 가기",
                       value: `[PR #${prNumber}: ${prTitle}](${prUrl})`,
-                      inline: false
-                    },
-                    {
-                      name: "📝 포함된 커밋 (최근 7개)",
-                      value: commitsList || "*커밋 정보 없음*",
-                      inline: false
-                    },
-                    {
-                      name: "📦 저장소",
-                      value: `[${repositoryName}](${repositoryUrl})`,
                       inline: true
                     },
                     {
-                      name: "👤 작성자",
-                      value: `[${prAuthor}](https://github.com/${prAuthor})`,
+                      name: "커밋 내용 (최근 7개)",
+                      value: commitsList || "*커밋 정보 없음*",
                       inline: true
                     }
                   ],
