@@ -153,7 +153,6 @@ jobs:
           PR_URL="${{ github.event.pull_request.html_url }}"
           PR_AUTHOR="${{ github.event.pull_request.user.login }}"
           PR_BASE_REF="${{ github.event.pull_request.base.ref }}"
-          REPOSITORY_NAME="${{ github.event.repository.name }}"
           REPOSITORY_URL="${{ github.event.repository.html_url }}"
 
           # --max-count=7: 최대 7개의 커밋만 가져옵니다.
@@ -166,7 +165,6 @@ jobs:
           echo "PR_URL=$PR_URL" >> $GITHUB_ENV
           echo "PR_AUTHOR=$PR_AUTHOR" >> $GITHUB_ENV
           echo "COMMITS_RAW_LIST=$(echo "$COMMITS" | sed 's/"/\\"/g')" >> $GITHUB_ENV # 원본 커밋 데이터 전달
-          echo "REPOSITORY_NAME=$(echo "$REPOSITORY_NAME" | sed 's/"/\\"/g')" >> $GITHUB_ENV
           echo "REPOSITORY_URL=$REPOSITORY_URL" >> $GITHUB_ENV
 
 
@@ -185,7 +183,6 @@ jobs:
             const prUrl = process.env.PR_URL;
             const prAuthor = process.env.PR_AUTHOR;
             const commitsRawList = process.env.COMMITS_RAW_LIST;
-            const repositoryName = process.env.REPOSITORY_NAME;
             const repositoryUrl = process.env.REPOSITORY_URL;
 
             let formattedCommitsList = "*커밋 정보 없음*";
@@ -222,7 +219,7 @@ jobs:
                     {
                       name: "커밋 내용 (최근 7개)",
                       value: formattedCommitsList,
-                      inline: false
+                      inline: true
                     }
                   ],
                   footer: {
