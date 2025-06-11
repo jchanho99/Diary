@@ -1,4 +1,4 @@
-name: Pull Request Discord Notification
+name: PR Discord Notification
 
 on:
   pull_request:
@@ -8,79 +8,95 @@ jobs:
   notify-discord:
     runs-on: ubuntu-latest
     steps:
-      - name: Get Pull Request details and commits
-        id: pr_details
-        run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_URL="${{ github.event.pull_request.html_url }}"
-          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
-          PR_BASE_REF="${{ github.event.pull_request.base.ref }}" # 대상 브랜치
-          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}" # 소스 브랜치
-
-          # GitHub CLI를 사용하여 커밋 목록 가져오기 (GitHub 토큰 필요)
-          # 이 스텝에서는 단순히 PR에 포함된 커밋을 나열합니다.
-          # 실제 워크플로우에서는 `github.token`을 사용하여 인증합니다.
-          # 참고: fetch 명령으로 HEAD 브랜치와 BASE 브랜치 간의 커밋을 비교합니다.
-
-          # 모든 PR 커밋을 가져오기 (merge commit 제외)
-          # PR 생성 시 포함된 커밋들의 정보를 얻기 위해 `github.event.pull_request.commits_url`을 사용할 수 있습니다.
-          # 또는 `git log` 명령어를 사용하여 base와 head 브랜치 간의 커밋을 비교할 수 있습니다.
-
-          # 여기서는 좀 더 간단하게 PR 이벤트에 포함된 커밋들을 직접 사용합니다.
-          # GitHub Event의 `pull_request.commits` 필드에는 커밋 수가 있지만,
-          # 실제 커밋 정보는 `pull_request.commits_url`을 통해 API 호출로 가져와야 합니다.
-          # 여기서는 `github.event.pull_request.head.sha`와 `github.event.pull_request.base.sha`를 이용하여 git log를 사용합니다.
-
-          # Git 리포지토리 체크아웃 (커밋 정보를 가져오기 위함)
-          git clone ${{ github.event.pull_request.base.repo.clone_url }} .
-          git fetch origin ${{ PR_HEAD_REF }}
-          git checkout ${{ PR_HEAD_REF }}
-
-          COMMITS_LIST=""
-          # Git log 명령어를 사용하여 base 브랜치와 head 브랜치 사이의 커밋을 가져옵니다.
-          # --no-merges: 병합 커밋 제외
-          # --pretty=format:"`%h` %s" : 짧은 해시와 제목만 표시
-          COMMITS=$(git log --no-merges --pretty=format:"`%h` %s" ${{ PR_BASE_REF }}..${{ PR_HEAD_REF }})
-
-          if [ -z "$COMMITS" ]; then
-            COMMITS_LIST="*커밋 정보 없음*"
-          else
-            COMMITS_LIST=$(echo "$COMMITS" | sed 's/^/* /') # 각 줄 앞에 `* ` 추가
-          fi
-
-          # Discord 메시지 본문 구성
-          DISCORD_MESSAGE="**새로운 PR이 생성되었습니다!** :rocket:\n\n"
-          DISCORD_MESSAGE+="**제목:** ${PR_TITLE}\n"
-          DISCORD_MESSAGE+="**PR 번호:** #${PR_NUMBER}\n"
-          DISCORD_MESSAGE+="**작성자:** ${PR_AUTHOR}\n"
-          DISCORD_MESSAGE+="**링크:** ${PR_URL}\n\n"
-          DISCORD_MESSAGE+="**포함된 커밋:**\n${COMMITS_LIST}"
-
-          # JSON 페이로드 구성 (Discord Webhook 형식)
-          # Discord Embeds를 사용하면 더 깔끔하게 표시할 수 있지만, 여기서는 간단하게 content 필드만 사용합니다.
-          # 참고: Discord Webhook의 content 필드는 2000자 제한이 있습니다.
-          # 커밋이 매우 많을 경우 잘릴 수 있으니 주의하세요.
-
-          DISCORD_PAYLOAD='{"content": "'"$DISCORD_MESSAGE"'", "username": "GitHub PR Notifier", "avatar_url": "https://avatars.githubusercontent.com/u/9919?s=200&v=4"}'
-
-          echo "DISCORD_PAYLOAD=${DISCORD_PAYLOAD}" >> $GITHUB_ENV
-
-      - name: Send Discord Notification
-        uses: actions/github-script@v7 # curl 명령어를 실행하기 위해 github-script 액션 사용
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }} # GitHub Secrets에 저장된 Webhook URL
+      - name: Get Pull Request details and commits via GitHub API
+        id: pr_details_api
+        uses: actions/github-script@v7
         with:
           script: |
-            const payload = process.env.DISCORD_PAYLOAD;
+            // core 객체를 통해 환경 변수를 설정합니다.
+            // context, github, core, io, exec, hash, etc. 객체들이 github-script에 제공됩니다.
+
+            const prNumber = context.issue.number;
+            const repoOwner = context.repo.owner;
+            const repoName = context.repo.repo;
+
+            // GitHub API를 사용하여 PR의 커밋 목록을 가져옵니다.
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner: repoOwner,
+              repo: repoName,
+              pull_number: prNumber,
+              per_page: 7, // 최대 7개 커밋만 가져오도록 설정
+            });
+
+            let formattedCommitsList = "*커밋 정보 없음*";
+            if (commits && commits.length > 0) {
+              formattedCommitsList = commits.map(commit => {
+                const sha = commit.sha.substring(0, 7); // 짧은 SHA
+                const message = commit.commit.message.split('\n')[0].trim(); // 첫 줄만 가져오기
+                const commitUrl = commit.html_url; // 커밋 HTML URL
+                return `* [\`${sha}\`](${commitUrl}) ${message}`;
+              }).join('\n');
+            }
+
+            // core.exportVariable을 사용하여 환경 변수를 설정합니다.
+            // JSON.stringify는 문자열 자체에 따옴표가 필요한 경우에만 사용 (예: 객체나 배열을 문자열로 저장할 때)
+            // 여기서는 이미 안전하게 문자열로 되어 있으므로 필요하지 않습니다.
+            core.exportVariable('PR_NUMBER', prNumber);
+            core.exportVariable('PR_TITLE', context.payload.pull_request.title);
+            core.exportVariable('PR_URL', context.payload.pull_request.html_url);
+            core.exportVariable('PR_AUTHOR', context.payload.pull_request.user.login);
+            core.exportVariable('COMMITS_FORMATTED_LIST', formattedCommitsList);
+
+
+      - name: Send Discord Notification
+        uses: actions/github-script@v7
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          script: |
             const webhookUrl = process.env.DISCORD_WEBHOOK;
+            // process.env를 통해 GITHUB_ENV에서 설정된 변수들을 직접 사용
+            const prNumber = process.env.PR_NUMBER;
+            const prTitle = process.env.PR_TITLE;
+            const prUrl = process.env.PR_URL;
+            const prAuthor = process.env.PR_AUTHOR;
+            const commitsList = process.env.COMMITS_FORMATTED_LIST;
+
+            const payload = {
+              username: "GitHub PR Notifier",
+              avatar_url: "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
+              embeds: [
+                {
+                  title: `PR 정보: #${prNumber} - ${prTitle}`,
+                  url: prUrl,
+                  color: 5814783,
+                  author: {
+                    name: `작성자: ${prAuthor}`,
+                    url: `https://github.com/${prAuthor}`,
+                    icon_url: `https://github.com/${prAuthor}.png?size=32`
+                  },
+                  fields: [
+                    {
+                      name: "커밋 내용 (최근 7개)",
+                      value: commitsList,
+                      inline: true
+                    }
+                  ],
+                  footer: {
+                    text: "GitHub Actions",
+                    icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                  },
+                  timestamp: new Date().toISOString()
+                }
+              ]
+            };
 
             const response = await fetch(webhookUrl, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
               },
-              body: payload,
+              body: JSON.stringify(payload),
             });
 
             if (!response.ok) {
