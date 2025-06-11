@@ -8,67 +8,63 @@ jobs:
   notify-discord:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      # Git Checkout 및 Fetch 스텝은 더 이상 필요 없습니다.
+      # GitHub API를 직접 호출하여 커밋 정보를 가져옵니다.
+
+      - name: Get Pull Request details and commits via GitHub API
+        id: pr_details_api
+        uses: actions/github-script@v7
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 1 # 현재 브랜치의 최신 커밋만 가져옵니다.
+          script: |
+            const prNumber = context.issue.number;
+            const repoOwner = context.repo.owner;
+            const repoName = context.repo.repo;
 
-      - name: Fetch base branch history
-        run: |
-          git fetch origin ${{ github.event.pull_request.base.ref }}
+            // GitHub API를 사용하여 PR의 커밋 목록을 가져옵니다.
+            // max 7개 커밋을 가져오도록 `per_page`를 설정합니다.
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner: repoOwner,
+              repo: repoName,
+              pull_number: prNumber,
+              per_page: 7, // 최대 7개 커밋만 가져오도록 설정
+            });
 
-      - name: Get Pull Request details and commits
-        id: pr_details
-        run: |
-          # 필요한 정보들을 지역 변수로 정의
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_URL="${{ github.event.pull_request.html_url }}"
-          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
-          PR_BASE_REF="${{ github.event.pull_request.base.ref }}"
-          REPOSITORY_URL="${{ github.event.repository.html_url }}"
+            let formattedCommitsList = "*커밋 정보 없음*";
+            if (commits && commits.length > 0) {
+              formattedCommitsList = commits.map(commit => {
+                const sha = commit.sha.substring(0, 7); // 짧은 SHA
+                const message = commit.commit.message.split('\n')[0].trim(); // 첫 줄만 가져오기
+                const commitUrl = commit.html_url; // 커밋 HTML URL
+                return `* [\`${sha}\`](${commitUrl}) ${message}`;
+              }).join('\n');
+            }
 
-          # --max-count=7: 최대 7개의 커밋만 가져옵니다.
-          # 형식: SHA@@@메시지
-          COMMITS=$(git log --no-merges --pretty=format:"%h@@@%s" --max-count=7 origin/"${PR_BASE_REF}"..HEAD)
-
-          # 다음 스텝에서 사용할 정보만 GITHUB_ENV에 저장
-          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
-          echo "PR_TITLE=$(echo "$PR_TITLE" | sed 's/"/\\"/g')" >> $GITHUB_ENV
-          echo "PR_URL=$PR_URL" >> $GITHUB_ENV
-          echo "PR_AUTHOR=$PR_AUTHOR" >> $GITHUB_ENV
-          echo "COMMITS_RAW_LIST=$(echo "$COMMITS" | sed 's/"/\\"/g')" >> $GITHUB_ENV # 원본 커밋 데이터 전달
-          echo "REPOSITORY_URL=$REPOSITORY_URL" >> $GITHUB_ENV
+            // 필요한 정보들을 GITHUB_ENV에 저장합니다.
+            // github.event.pull_request 객체에서 직접 가져옵니다.
+            console.log(`::set-env name=PR_NUMBER::${prNumber}`);
+            console.log(`::set-env name=PR_TITLE::${JSON.stringify(context.payload.pull_request.title)}`);
+            console.log(`::set-env name=PR_URL::${context.payload.pull_request.html_url}`);
+            console.log(`::set-env name=PR_AUTHOR::${context.payload.pull_request.user.login}`);
+            console.log(`::set-env name=COMMITS_FORMATTED_LIST::${JSON.stringify(formattedCommitsList)}`); // 포맷팅된 커밋 목록
+            console.log(`::set-env name=REPOSITORY_NAME::${JSON.stringify(repoName)}`);
+            console.log(`::set-env name=REPOSITORY_URL::${context.payload.repository.html_url}`);
 
 
       - name: Send Discord Notification
         uses: actions/github-script@v7
         env:
-          # 필요한 환경 변수만 명시적으로 전달
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          # 이전 스텝에서 GITHUB_ENV에 설정된 변수들은 자동으로 `process.env`로 접근 가능
         with:
           script: |
             const webhookUrl = process.env.DISCORD_WEBHOOK;
+            // GITHUB_ENV에서 설정된 변수들을 직접 사용
             const prNumber = process.env.PR_NUMBER;
             const prTitle = process.env.PR_TITLE;
             const prUrl = process.env.PR_URL;
             const prAuthor = process.env.PR_AUTHOR;
-            const commitsRawList = process.env.COMMITS_RAW_LIST;
+            const commitsList = process.env.COMMITS_FORMATTED_LIST; // 이미 포맷팅된 리스트 사용
+            const repositoryName = process.env.REPOSITORY_NAME;
             const repositoryUrl = process.env.REPOSITORY_URL;
-
-            let formattedCommitsList = "*커밋 정보 없음*";
-            if (commitsRawList && commitsRawList !== '*커밋 정보 없음*') {
-              const commitsArray = commitsRawList.split('\n').filter(line => line.trim() !== '');
-              formattedCommitsList = commitsArray.map(commitLine => {
-                const parts = commitLine.split('@@@');
-                const sha = parts[0];
-                const message = parts.slice(1).join('@@@').trim();
-                const commitUrl = `${repositoryUrl}/commit/${sha}`;
-                return `* [\`${sha}\`](${commitUrl}) ${message}`;
-              }).join('\n');
-            }
 
             const payload = {
               username: "GitHub PR Notifier",
@@ -85,14 +81,14 @@ jobs:
                   },
                   fields: [
                     {
-                      name: "PR 구경하러 가기   |  ",
+                      name: "PR 구경하러 가기",
                       value: `[PR #${prNumber}: ${prTitle}](${prUrl})`,
                       inline: true
                     },
                     {
                       name: "커밋 내용 (최근 7개)",
-                      value: formattedCommitsList,
-                      inline: true
+                      value: commitsList, // 이미 포맷팅된 리스트
+                      inline: false // 커밋 목록은 여러 줄이므로 inline: false가 더 적합합니다.
                     }
                   ],
                   footer: {
