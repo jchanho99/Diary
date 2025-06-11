@@ -17,6 +17,10 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            if (!github.event.pull_request) {
+              console.log("Not a pull_request event, or pull_request object is missing. Exiting.");
+              return; // Exit the script gracefully
+            }
             const pr = github.event.pull_request;
             const action = github.event.action; // 이벤트 액션 가져오기
 
