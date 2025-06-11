@@ -2,7 +2,7 @@ name: Pull Request Discord Notification
 
 on:
   pull_request:
-    types: [opened, reopened]
+    types: [opened, reopened] # PR이 열리거나 다시 열릴 때 실행
 
 jobs:
   notify-discord:
@@ -11,15 +11,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # PR의 head (소스) 브랜치만 가져옵니다.
-          # base 브랜치의 히스토리는 git fetch로 가져올 것입니다.
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 1 # 현재 브랜치의 최신 커밋만 가져옵니다.
 
       - name: Fetch base branch history
         run: |
-          # 대상 브랜치 (main, master 등)의 히스토리를 가져옵니다.
-          # base.ref를 사용하여 실제 브랜치 이름을 사용합니다.
           git fetch origin ${{ github.event.pull_request.base.ref }}
 
       - name: Get Pull Request details and commits
@@ -29,59 +25,99 @@ jobs:
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
           PR_AUTHOR="${{ github.event.pull_request.user.login }}"
-          PR_BASE_REF="${{ github.event.pull_request.base.ref }}" # 대상 브랜치 (예: main)
-          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}" # 소스 브랜치 (예: feature/xyz)
+          PR_BASE_REF="${{ github.event.pull_request.base.ref }}"
+          PR_HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          REPOSITORY_NAME="${{ github.event.repository.name }}" # 저장소 이름 추가
+          REPOSITORY_URL="${{ github.event.repository.html_url }}" # 저장소 URL 추가
 
-          echo "DEBUG: PR_BASE_REF=${PR_BASE_REF}"
-          echo "DEBUG: PR_HEAD_REF=${PR_HEAD_REF}"
-          echo "DEBUG: Current HEAD=$(git rev-parse HEAD)"
-          echo "DEBUG: Origin ${PR_BASE_REF}=$(git rev-parse origin/${PR_BASE_REF})"
-
-          # git log 명령어를 사용하여 base 브랜치와 head 브랜치 사이의 커밋을 가져옵니다.
-          # --no-merges: 병합 커밋 제외
-          # --pretty=format:"`%h` %s" : 짧은 해시와 제목만 표시
-          # ${PR_BASE_REF} 대신 origin/${PR_BASE_REF}를 사용하여 원격 브랜치를 명시적으로 참조합니다.
-          # HEAD는 actions/checkout@v4로 체크아웃된 PR_HEAD_REF를 가리킵니다.
           COMMITS=$(git log --no-merges --pretty=format:"`%h` %s" origin/"${PR_BASE_REF}"..HEAD)
 
+          COMMITS_LIST=""
           if [ -z "$COMMITS" ]; then
-            COMMITS_LIST="*커밋 정보 없음 또는 이미 병합된 커밋*"
-            # `git log`가 실패했거나 커밋이 없는 경우, PR에 직접 연결된 커밋들을 가져오는 대체 로직
-            # API 호출이 필요하며, GitHub 토큰을 사용해야 합니다.
-            # 여기서는 API 호출 대신 단순 메시지로 대체합니다.
-            # 커밋 정보가 없는 경우, PR의 이벤트 페이로드에 있는 커밋 수를 활용할 수도 있습니다.
-            # COMMITS_LIST="*PR에 포함된 커밋 수: ${{ github.event.pull_request.commits }}*"
-
-            # 만약 git log가 실패하는 경우, PR 이벤트의 `pull_request.commits_url`을 사용하여 API를 통해 커밋 정보를 가져오는 것이 더 견고할 수 있습니다.
-            # 이는 다음 스텝에서 `github-script`를 사용하여 GitHub API를 호출해야 합니다.
+            COMMITS_LIST="*커밋 정보 없음*"
           else
-            # 각 줄 앞에 '* ' 추가
-            COMMITS_LIST=$(echo "$COMMITS" | sed 's/^/* /')
+            # 각 커밋 메시지를 Discord Embed field 형식에 맞게 가공합니다.
+            # 백틱(`)으로 감싸면 코드로 인식되어 보기 좋습니다.
+            COMMITS_LIST=$(echo "$COMMITS" | sed 's/^/\`/' | sed 's/$/\`/')
           fi
 
-          DISCORD_MESSAGE="**새로운 PR이 생성되었습니다!** :rocket:\n\n"
-          DISCORD_MESSAGE+="**제목:** ${PR_TITLE}\n"
-          DISCORD_MESSAGE+="**PR 번호:** #${PR_NUMBER}\n"
-          DISCORD_MESSAGE+="**작성자:** ${PR_AUTHOR}\n"
-          DISCORD_MESSAGE+="**링크:** ${PR_URL}\n\n"
-          DISCORD_MESSAGE+="**포함된 커밋:**\n${COMMITS_LIST}"
+          # 다음 스텝에서 사용할 수 있도록 환경 변수에 저장
+          # JSON 문자열에 큰따옴표가 들어갈 수 있으므로 이스케이프 처리
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+          echo "PR_TITLE=$(echo "$PR_TITLE" | sed 's/"/\\"/g')" >> $GITHUB_ENV
+          echo "PR_URL=$PR_URL" >> $GITHUB_ENV
+          echo "PR_AUTHOR=$PR_AUTHOR" >> $GITHUB_ENV
+          echo "COMMITS_LIST=$(echo "$COMMITS_LIST" | sed 's/"/\\"/g')" >> $GITHUB_ENV
+          echo "REPOSITORY_NAME=$(echo "$REPOSITORY_NAME" | sed 's/"/\\"/g')" >> $GITHUB_ENV
+          echo "REPOSITORY_URL=$REPOSITORY_URL" >> $GITHUB_ENV
 
-          echo "DISCORD_MESSAGE=$(echo "$DISCORD_MESSAGE" | sed 's/"/\\"/g')" >> $GITHUB_ENV
 
       - name: Send Discord Notification
         uses: actions/github-script@v7
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DISCORD_MESSAGE: ${{ env.DISCORD_MESSAGE }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          PR_TITLE: ${{ env.PR_TITLE }}
+          PR_URL: ${{ env.PR_URL }}
+          PR_AUTHOR: ${{ env.PR_AUTHOR }}
+          COMMITS_LIST: ${{ env.COMMITS_LIST }}
+          REPOSITORY_NAME: ${{ env.REPOSITORY_NAME }}
+          REPOSITORY_URL: ${{ env.REPOSITORY_URL }}
         with:
           script: |
-            const discordMessage = process.env.DISCORD_MESSAGE;
             const webhookUrl = process.env.DISCORD_WEBHOOK;
+            const prNumber = process.env.PR_NUMBER;
+            const prTitle = process.env.PR_TITLE;
+            const prUrl = process.env.PR_URL;
+            const prAuthor = process.env.PR_AUTHOR;
+            const commitsList = process.env.COMMITS_LIST;
+            const repositoryName = process.env.REPOSITORY_NAME;
+            const repositoryUrl = process.env.REPOSITORY_URL;
 
+            // Discord Embed 형식 정의
             const payload = {
-              content: discordMessage,
               username: "GitHub PR Notifier",
-              avatar_url: "https://avatars.githubusercontent.com/u/9919?s=200&v=4"
+              avatar_url: "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
+              embeds: [
+                {
+                  title: `✨ 새로운 PR: #${prNumber} - ${prTitle}`, // Embed의 제목
+                  url: prUrl, // 제목 클릭 시 이동할 URL
+                  description: `**${repositoryName}** 저장소에 PR이 생성되었습니다.`, // Embed의 설명 (선택 사항)
+                  color: 5814783, // 녹색 (DECIMAL 값, HEX #5865F2 (Discord Blurple), #34eb5b (Green))
+                  author: {
+                    name: `작성자: ${prAuthor}`,
+                    url: `https://github.com/${prAuthor}`, // 작성자 프로필 링크
+                    icon_url: `https://github.com/${prAuthor}.png?size=32` // 작성자 아바타
+                  },
+                  fields: [ // 정보 필드
+                    {
+                      name: "🔗 PR 링크",
+                      value: `[PR #${prNumber}: ${prTitle}](${prUrl})`,
+                      inline: false // 한 줄 전체 사용
+                    },
+                    {
+                      name: "📝 포함된 커밋",
+                      value: commitsList || "*커밋 정보 없음*", // 커밋이 없으면 대체 메시지
+                      inline: false
+                    },
+                    {
+                      name: "📦 저장소",
+                      value: `[${repositoryName}](${repositoryUrl})`,
+                      inline: true
+                    },
+                    {
+                      name: "👤 작성자",
+                      value: `[${prAuthor}](https://github.com/${prAuthor})`,
+                      inline: true
+                    }
+                  ],
+                  footer: {
+                    text: "GitHub Actions",
+                    icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                  },
+                  timestamp: new Date().toISOString() // 현재 시간
+                }
+              ]
             };
 
             const response = await fetch(webhookUrl, {
