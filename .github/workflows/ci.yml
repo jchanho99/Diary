@@ -40,46 +40,46 @@ jobs:
         if: success()
         run: |
           cat <<EOF | curl -H "Content-Type: application/json" -X POST -d @- ${{ secrets.DISCORD_WEBHOOK_URL }}
-{
-  "embeds": [
-    {
-      "title": "[Diary:${{ github.ref_name }}] ✅ CI 성공",
-      "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
-      "color": 3066993,
-      "author": {
-        "name": "${{ github.actor }}"
-      },
-      "description": "[\`${SHORT_SHA}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 성공!",
-      "footer": {
-        "text": "GitHub Actions by ${{ github.actor }}"
-      },
-      "timestamp": "${TIMESTAMP}"
-    }
-  ]
-}
-EOF
+          {
+            "embeds": [
+              {
+                "title": "[Diary:${{ github.ref_name }}] ✅ CI 성공",
+                "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+                "color": 3066993,
+                "author": {
+                  "name": "${{ github.actor }}"
+                },
+                "description": "[\`${SHORT_SHA}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 성공!",
+                "footer": {
+                  "text": "GitHub Actions by ${{ github.actor }}"
+                },
+                "timestamp": "${TIMESTAMP}"
+              }
+            ]
+          }
+          EOF
 
       # ❌ 실패 알림
       - name: Send Discord Failure Notification
         if: failure()
         run: |
           cat <<EOF | curl -H "Content-Type: application/json" -X POST -d @- ${{ secrets.DISCORD_WEBHOOK_URL }}
-{
-  "embeds": [
-    {
-      "title": "[Diary:${{ github.ref_name }}] ❌ CI 실패",
-      "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
-      "color": 15158332,
-      "author": {
-        "name": "${{ github.actor }}"
-      },
-      "description": "[\`${SHORT_SHA}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 실패 발생!",
-      "footer": {
-        "text": "GitHub Actions by ${{ github.actor }}"
-      },
-      "timestamp": "${TIMESTAMP}"
-    }
-  ]
-}
-EOF
+          {
+            "embeds": [
+              {
+                "title": "[Diary:${{ github.ref_name }}] ❌ CI 실패",
+                "url": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}",
+                "color": 15158332,
+                "author": {
+                  "name": "${{ github.actor }}"
+                },
+                "description": "[\`${SHORT_SHA}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) ${EVENT_TYPE} 이벤트로 CI 실패 발생!",
+                "footer": {
+                  "text": "GitHub Actions by ${{ github.actor }}"
+                },
+                "timestamp": "${TIMESTAMP}"
+              }
+            ]
+          }
+          EOF
 
